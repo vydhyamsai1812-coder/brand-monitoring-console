@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Signal — brand monitoring console</title>
+<style>
+  :root {
+    --bg: #11141A;
+    --panel: #1A1F28;
+    --panel-2: #20262F;
+    --border: #2A313D;
+    --text: #E7EAEE;
+    --muted: #8891A0;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    --low: #4E8C7C;
+    --low-bg: #16261F;
+    --medium: #C99A3E;
+    --medium-bg: #2A2213;
+    --high: #C1543A;
+    --high-bg: #2A1A15;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+  }
+  .app { display: grid; grid-template-columns: 340px 1fr 280px; height: 100vh; }
+  .col { border-right: 1px solid var(--border); overflow-y: auto; }
+  .col:last-child { border-right: none; }
+  .col-header {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0;
+    background: var(--bg);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .col-title { font-size: 13px; color: var(--muted); letter-spacing: 0.02em; }
+  .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--low); display: inline-block; margin-right: 6px; animation: pulse 2s infinite; }
+  .live-dot.error { background: var(--high); }
+  .live-dot.loading { background: var(--medium); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  .control-bar {
+    display: flex; gap: 6px; padding: 10px 16px; border-bottom: 1px solid var(--border);
+    background: var(--panel); align-items: center; flex-wrap: wrap;
+  }
+  .control-bar input {
+    flex: 1; min-width: 100px; font-family: var(--sans); font-size: 12px; padding: 6px 8px;
+    border-radius: 4px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+  }
+  .reddit-status { font-size: 10px; color: var(--muted); width: 100%; margin-top: 6px; line-height: 1.4; }
+
+  .feed-item {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .feed-item:hover { background: var(--panel); }
+  .feed-item.selected { background: var(--panel-2); }
+  .feed-item.sev-low { border-left-color: var(--low); }
+  .feed-item.sev-medium { border-left-color: var(--medium); }
+  .feed-item.sev-high { border-left-color: var(--high); }
+  .feed-item.actioned { opacity: 0.45; }
+  .feed-meta { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .feed-text { font-size: 13px; line-height: 1.4; color: var(--text); }
+  .feed-text.truncate { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+  .platform-tag { font-family: var(--mono); font-size: 9px; padding: 0 5px; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.03em; }
+  .platform-tag.reddit { background: var(--low-bg); color: var(--low); }
+  .platform-tag.sim { background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); }
+
+  .badge { font-family: var(--mono); font-size: 10px; padding: 1px 6px; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .badge.low { background: var(--low-bg); color: var(--low); }
+  .badge.medium { background: var(--medium-bg); color: var(--medium); }
+  .badge.high { background: var(--high-bg); color: var(--high); }
+
+  .detail { padding: 20px; }
+  .empty-state { padding: 60px 20px; text-align: center; color: var(--muted); }
+  .detail-source { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .detail-text { font-size: 16px; line-height: 1.55; margin: 10px 0 10px; }
+  .detail-link { font-size: 12px; margin-bottom: 18px; display: inline-block; }
+  .detail-link a { color: var(--low); text-decoration: none; }
+  .detail-link a:hover { text-decoration: underline; }
+  .detail-section { margin-bottom: 20px; }
+  .detail-label { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .signals { display: flex; flex-wrap: wrap; gap: 6px; }
+  .signal-chip { font-family: var(--mono); font-size: 11px; padding: 3px 8px; border-radius: 3px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); }
+
+  .action-card { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 14px; margin-bottom: 10px; }
+  .action-title { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .action-body { font-size: 13px; color: var(--muted); line-height: 1.5; margin-bottom: 12px; white-space: pre-wrap; }
+  .action-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
+    font-family: var(--sans); font-size: 12px; padding: 7px 12px; border-radius: 4px;
+    border: 1px solid var(--border); background: var(--panel-2); color: var(--text); cursor: pointer;
+  }
+  button:hover { border-color: #454E5C; }
+  button.approve { background: #17301F; border-color: #2F5C3B; color: #7FD79A; }
+  button.approve:hover { background: #1D3B27; }
+  button.dismiss { background: transparent; }
+  button.reject { background: #331A1A; border-color: #5C2F2F; color: #E08B8B; }
+  button.retract { background: #33241A; border-color: #5C462F; color: #E0B98B; }
+  button.retract:hover { background: #3D2C1F; }
+
+  .retract-row { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+  .retract-row input {
+    flex: 1; font-family: var(--sans); font-size: 12px; padding: 6px 8px;
+    border-radius: 4px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+  }
+  .retracted-note {
+    font-size: 12px; color: var(--high); border-top: 1px solid var(--border);
+    margin-top: 10px; padding-top: 10px;
+  }
+  .history-entry { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .feed-item.retracted { border-left-color: var(--high); }
+
+  .account-alert-banner { border-bottom: 1px solid var(--border); background: var(--high-bg); }
+  .account-alert-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 16px; font-size: 12px; color: var(--high); gap: 8px;
+  }
+  .account-alert-row button { flex-shrink: 0; }
+
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 14px 16px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; }
+  .stat-num { font-family: var(--mono); font-size: 20px; }
+  .stat-label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .queue-item { padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .queue-item .queue-text { color: var(--muted); margin-top: 3px; font-size: 11px; }
+  .disclaimer { padding: 12px 16px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="col" id="feed-col">
+    <div class="col-header">
+      <span class="col-title"><span class="live-dot" id="live-dot"></span>multi-source feed — simulated (Reddit-style heuristic engine)</span>
+    </div>
+    <div class="control-bar">
+      <input id="brand-input" type="text" value="Tesla" placeholder="Brand or keyword to simulate on Reddit" />
+      <button onclick="setTrackedBrand(document.getElementById('brand-input').value)">Track</button>
+      <span class="reddit-status" id="reddit-status-text">Generating Reddit-style feed…</span>
+    </div>
+    <div id="feed-list"></div>
+  </div>
+
+  <div class="col" id="detail-col">
+    <div class="col-header"><span class="col-title">item detail & suggested action</span></div>
+    <div id="detail-content"><div class="empty-state">Select an item from the feed to review suggested actions.</div></div>
+  </div>
+
+  <div class="col" id="side-col">
+    <div class="col-header"><span class="col-title">escalation stats</span></div>
+    <div class="stat-grid" id="stats"></div>
+    <div class="col-header" style="border-top:1px solid var(--border)"><span class="col-title">actioned</span></div>
+    <div id="queue-list"></div>
+    <div class="disclaimer">Everything in this console is simulated, including the Reddit lane — a browser running inside Claude's artifact preview can only call Anthropic's own API, not reddit.com, so a genuinely live poll isn't possible here regardless of how the fetch code is written. The Reddit-style items are freshly generated post text run through the same keyword-based <code>classifyRedditText</code> heuristic that would score real posts, so the severity/signal logic is real even though the input text isn't. Twitter/X, review-site, news, and forum items are simulated placeholders too. Nothing in this console actually deletes a real post, reports a real account, or contacts anyone — "escalate + flag for takedown" and "flag account for reporting" are internal recommendations for a human team to act on; retracting clears the internal flag only.</div>
+  </div>
+</div>
+
+<script>
+// ---------- Simulated side (Twitter/X, review sites, news, forums) ----------
+// Kept intentionally fictional: these platforms need paid/approved API access
+// that a hackathon project can't get same-day. Every item from this path is
+// tagged platform: "simulated" and labeled as such everywhere in the UI.
+const SOURCES = ["Twitter/X", "Review site", "News outlet", "Forum"];
+
+const AUTHORS = ["@quiet_lurker", "@just_a_user22", "@ux_feedback_fan", "@newsdesk_local"];
+const RISKY_AUTHORS = ["@techleaks_daily", "@ap_watchdog99", "@brand_critic_hq"];
+
+function pickAccount(sev) {
+  if (sev === "high" && Math.random() < 0.65) {
+    return RISKY_AUTHORS[Math.floor(Math.random() * RISKY_AUTHORS.length)];
+  }
+  const pool = AUTHORS.concat(RISKY_AUTHORS);
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+const TEMPLATES = [
+  { text: "Just tried {brand}'s new update and it crashed my whole workflow. Anyone else?", sev: "low", signals: ["product complaint", "isolated report"] },
+  { text: "{brand} customer support has ignored my refund request for 3 weeks now.", sev: "medium", signals: ["service complaint", "public visibility", "repeat contact"] },
+  { text: "Screenshot: {brand}'s app is leaking user location data to a third party analytics tool.", sev: "high", signals: ["security claim", "privacy allegation", "high shareability"] },
+  { text: "Love the new {brand} feature, way faster than before!", sev: "low", signals: ["positive sentiment"] },
+  { text: "BREAKING: former {brand} employee alleges the company covered up a safety issue internally.", sev: "high", signals: ["whistleblower claim", "legal exposure", "press pickup risk"] },
+  { text: "{brand} pricing changed overnight with zero notice, feels shady.", sev: "medium", signals: ["trust erosion", "moderate reach"] },
+  { text: "Is {brand} even still supporting the older hardware line? No response in the forums.", sev: "low", signals: ["support gap", "low reach"] },
+  { text: "This thread about {brand}'s labor practices is picking up steam, over 4k upvotes now.", sev: "high", signals: ["viral trajectory", "labor allegation", "brand reputation risk"] },
+  { text: "Mixed feelings on the {brand} redesign, some things got harder to find.", sev: "low", signals: ["ux feedback"] },
+  { text: "Local news segment tonight covering complaints against {brand} over billing practices.", sev: "high", signals: ["broadcast media", "regulatory attention risk"] },
+];
+
+let trackedBrand = "Tesla"; // also drives the simulated Reddit-style lane below
+let items = [];
+let selectedId = null;
+let actionedCount = 0;
+let idCounter = 0;
+
+function severityRank(s) { return { low: 0, medium: 1, high: 2 }[s]; }
+
+function genSimulatedItem() {
+  const t = TEMPLATES[Math.floor(Math.random() * TEMPLATES.length)];
+  idCounter += 1;
+  return {
+    id: idCounter,
+    platform: "simulated",
+    source: SOURCES[Math.floor(Math.random() * SOURCES.length)],
+    account: pickAccount(t.sev),
+    text: t.text.replace("{brand}", trackedBrand),
+    severity: t.sev,
+    signals: t.signals,
+    time: new Date(),
+    actioned: false,
+    actionTaken: null,
+    removed: false,
+  };
+}
+
+// ---------- Reddit-style lane (simulated) ----------
+// A live client-side poll of reddit.com can't work from inside this preview:
+// the artifact sandbox only allows outbound calls to Anthropic's own API, so
+// any direct fetch() to reddit.com fails there regardless of how it's coded
+// (that's what the earlier "Reddit fetch failed" error actually was). Rather
+// than show that error, this generates fresh Reddit-style post text for the
+// tracked brand and runs it through the SAME keyword heuristic a live feed
+// would use — so classifyRedditText is doing real work, just on synthetic
+// input. If you self-host this file outside Claude's preview, reddit.com's
+// public search.json endpoint does generally allow anonymous CORS GET
+// requests from a real browser, so a genuinely live version is possible
+// there — see fetchRedditLive() below, kept for that case, unused by default.
+let redditStatus = { state: "idle", message: "Generating Reddit-style feed…" };
+let redditTimer = null;
+
+const REDDIT_SUBREDDITS = ["technology", "stocks", "mildlyinfuriating", "CustomerService", "wallstreetbets", "news"];
+const REDDIT_USERS = ["u/throwaway8821", "u/deleted_user_44", "u/longtime_lurker7", "u/market_watcher_99", "u/just_saying_this", "u/burner_acct_2024"];
+
+// Simple keyword heuristic, NOT real sentiment/NLP — real posts are messy,
+// sarcastic, and ambiguous in ways a keyword match can't capture. This is a
+// starting point for triage, not a substitute for human review or a real
+// classifier (an LLM-based classifier would be the natural next upgrade).
+const REDDIT_SIGNAL_RULES = [
+  { signal: "legal exposure", keywords: ["lawsuit", "sue ", "sued", "illegal", "fraud", "class action", "in court"] },
+  { signal: "security claim", keywords: ["hacked", "breach", "exploit", "vulnerability", "hack "] },
+  { signal: "privacy allegation", keywords: ["privacy", "personal data", "doxx", "location data", "tracking users"] },
+  { signal: "safety", keywords: ["unsafe", "injury", "recall", "safety issue", "dangerous"] },
+  { signal: "whistleblower claim", keywords: ["whistleblower", "former employee", "insider says", "internal memo"] },
+  { signal: "viral trajectory", keywords: ["viral", "blowing up", "front page", "trending", "thousands of upvotes"] },
+  { signal: "press pickup risk", keywords: ["news", "reporter", "journalist", "covered by"] },
+  { signal: "service complaint", keywords: ["refund", "customer service", "support ticket", "ignored my", "won't respond"] },
+  { signal: "repeat contact", keywords: ["again", "every time", "still hasn't", "weeks now", "months now", "third time"] },
+  { signal: "trust erosion", keywords: ["disappointed", "losing trust", "not what it used to be", "shady", "sketchy"] },
+  { signal: "positive sentiment", keywords: ["love", "amazing", "great experience", "impressed", "fantastic", "works great"] },
+];
+
+// Post-title/body skeletons written in casual Reddit phrasing so the keyword
+// heuristic below has realistic (messy, sarcastic, mixed-signal) text to
+// work with — not the same fixed severity-labeled templates used for the
+// other simulated platforms.
+const REDDIT_POST_SKELETONS = [
+  { title: "Anyone else notice {brand} support just doesn't respond anymore?", body: "Been waiting on a ticket for weeks now, still hasn't moved. Losing trust in them honestly." },
+  { title: "{brand} customer service ignored my refund request again", body: "Third time I've had to follow up. Every time it's 'someone will get back to you.'" },
+  { title: "Is it just me or has {brand} gotten worse this year", body: "Not a huge complaint, just feels not what it used to be. Mixed feelings overall." },
+  { title: "PSA: {brand} app was tracking users' location data without clear consent", body: "Found this digging through the permissions. Feels like a privacy issue, not just a bug." },
+  { title: "Former {brand} employee claims internal memo covered up a safety issue", body: "Insider says leadership knew for months. If true this is a real safety issue, not just PR spin." },
+  { title: "{brand} thread is blowing up right now, front page of the sub", body: "Thousands of upvotes in a few hours, a reporter already reached out for comment apparently." },
+  { title: "Genuinely impressed with {brand} lately", body: "Support fixed my issue same day, works great now. Not sponsored, just a good experience." },
+  { title: "Possible security vulnerability in {brand}'s app?", body: "A researcher posted about an exploit that could let someone breach account data. Not confirmed yet but worth watching." },
+  { title: "{brand} pricing changed with zero notice, feels shady", body: "No email, no warning, just a higher bill this month. Sketchy way to handle it." },
+  { title: "Lawsuit filed against {brand} over billing practices", body: "Class action apparently, a few news outlets are covered by wire services already picking it up." },
+];
+
+function classifyRedditText(text) {
+  const lower = text.toLowerCase();
+  const signals = [];
+  REDDIT_SIGNAL_RULES.forEach(rule => {
+    if (rule.keywords.some(k => lower.includes(k))) signals.push(rule.signal);
+  });
+  if (signals.length === 0) signals.push("general mention");
+
+  const highTriggers = ["legal exposure", "security claim", "privacy allegation", "safety", "whistleblower claim"];
+  const hasHigh = signals.some(s => highTriggers.includes(s));
+  const hasViral = signals.includes("viral trajectory") || signals.includes("press pickup risk");
+  const hasService = signals.some(s => ["service complaint", "repeat contact", "trust erosion"].includes(s));
+
+  let severity = "low";
+  if (hasHigh || (hasViral && (hasService || hasHigh))) severity = "high";
+  else if (hasService) severity = "medium";
+
+  return { severity, signals };
+}
+
+function genSimulatedRedditItem() {
+  const skel = REDDIT_POST_SKELETONS[Math.floor(Math.random() * REDDIT_POST_SKELETONS.length)];
+  const rawText = skel.title.replace("{brand}", trackedBrand) + ". " + skel.body.replace("{brand}", trackedBrand);
+  const { severity, signals } = classifyRedditText(rawText);
+  idCounter += 1;
+  return {
+    id: idCounter,
+    platform: "reddit-sim",
+    source: "r/" + REDDIT_SUBREDDITS[Math.floor(Math.random() * REDDIT_SUBREDDITS.length)],
+    account: REDDIT_USERS[Math.floor(Math.random() * REDDIT_USERS.length)],
+    text: rawText,
+    severity,
+    signals,
+    time: new Date(),
+    actioned: false,
+    actionTaken: null,
+    removed: false,
+    redditScore: Math.floor(Math.random() * 900) + 5,
+  };
+}
+
+function refreshRedditFeed() {
+  redditStatus = { state: "loading", message: "Generating Reddit-style feed…" };
+  render();
+  const added = Math.floor(Math.random() * 3) + 2; // 2-4 new items per refresh
+  for (let i = 0; i < added; i++) {
+    const item = genSimulatedRedditItem();
+    autoExecuteIfEligible(item);
+    items.push(item);
+  }
+  if (items.length > 80) items.splice(0, items.length - 80);
+  redditStatus = {
+    state: "ok",
+    message: `Simulated — refreshed ${fmtTime(new Date())}, +${added} new Reddit-style posts for "${trackedBrand}". Live polling isn't available inside this preview sandbox.`,
+  };
+  render();
+}
+
+// Kept for reference only, not called by default: this is the real
+// implementation, and it will actually work if you self-host this file
+// outside Claude's preview (reddit.com's public search.json endpoint
+// generally allows anonymous CORS GET from a real browser).
+async function fetchRedditLive() {
+  const res = await fetch(
+    `https://www.reddit.com/search.json?q=${encodeURIComponent(trackedBrand)}&sort=new&limit=10&raw_json=1`
+  );
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const json = await res.json();
+  return (json.data && json.data.children) || [];
+}
+
+function setTrackedBrand(newBrand) {
+  const cleaned = (newBrand || "").trim();
+  if (!cleaned) return;
+  trackedBrand = cleaned;
+  refreshRedditFeed();
+}
+window.setTrackedBrand = setTrackedBrand;
+
+// ---------- Shared decision engine (works the same for real + simulated) ----------
+function classifySignals(item) {
+  const s = item.signals.map(x => x.toLowerCase());
+  const has = (...keys) => keys.some(k => s.some(sig => sig.includes(k)));
+  return {
+    legalOrSafety: has("legal", "security", "safety", "whistleblower", "privacy", "regulatory"),
+    viral: has("viral", "shareability", "press pickup", "broadcast"),
+    isolated: has("isolated", "low reach"),
+    serviceIssue: has("service complaint", "repeat contact", "trust erosion"),
+    exposesPrivateOrExploitData: has("security claim", "privacy allegation"),
+  };
+}
+
+const ACCOUNT_REPORT_THRESHOLD = 2;
+let reportedAccounts = new Set();
+
+function accountHighSeverityCounts() {
+  const counts = {};
+  items.forEach(i => {
+    if (i.severity === "high") counts[i.account] = (counts[i.account] || 0) + 1;
+  });
+  return counts;
+}
+
+function accountsNeedingReport() {
+  const counts = accountHighSeverityCounts();
+  return Object.keys(counts)
+    .filter(acct => counts[acct] >= ACCOUNT_REPORT_THRESHOLD && !reportedAccounts.has(acct))
+    .map(acct => ({ account: acct, count: counts[acct] }));
+}
+
+function reportAccount(account) {
+  reportedAccounts.add(account);
+  items.forEach(i => {
+    if (i.account === account) {
+      i.history = i.history || [];
+      i.history.push({ at: fmtTime(new Date()), event: `Account ${account} flagged internally for platform reporting (not yet submitted to the platform)` });
+    }
+  });
+  render();
+}
+window.reportAccount = reportAccount;
+
+function suggestedAction(item) {
+  const sig = classifySignals(item);
+
+  if (item.severity === "high" || sig.legalOrSafety || sig.viral) {
+    return sig.exposesPrivateOrExploitData
+      ? {
+          type: "escalate_remove",
+          title: "Suggested: escalate + flag post for takedown",
+          body: "This post itself exposes private data or a live security exploit — separate from whether the underlying claim about us is true. Recommend escalating to trust & safety/legal AND flagging the post internally for a platform takedown request, since it's the exposure itself that's the immediate risk. This console does not submit that request itself.\n\nDraft reply:\n\"We take this seriously and are looking into it directly. We'll share an update once we've confirmed the details.\"",
+        }
+      : {
+          type: "escalate",
+          title: "Suggested: escalate + draft holding statement",
+          body: "This mentions a security, legal, or safety allegation, or has high shareability. Recommend routing to legal/trust & safety for review, and preparing a factual holding statement. This is criticism/allegation content, not itself takedown-worthy — don't flag it for removal just for being unfavorable.\n\nDraft reply:\n\"We take this seriously and are looking into it directly. We'll share an update once we've confirmed the details.\"",
+        };
+  }
+  if (item.severity === "medium" && sig.serviceIssue && !sig.isolated) {
+    return {
+      type: "reply",
+      title: "Suggested: public reply from support",
+      body: "Service or trust complaint with moderate visibility and no isolated/low-reach signal. Recommend a direct, specific public reply rather than escalation.\n\nDraft reply:\n\"Sorry for the delay here — send us your order/ticket number in DM and we'll get this sorted today.\"",
+    };
+  }
+  return {
+    type: "monitor",
+    title: "Suggested: monitor, no action needed",
+    body: "Low-severity, isolated, or purely positive feedback — no service-issue signal strong enough to warrant a public reply. Recommend logging for trend tracking only. No public response needed unless volume increases.",
+  };
+}
+
+function fmtTime(d) {
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function render() {
+  const dot = document.getElementById("live-dot");
+  if (dot) dot.className = "live-dot" + (redditStatus.state === "error" ? " error" : redditStatus.state === "loading" ? " loading" : "");
+  const statusEl = document.getElementById("reddit-status-text");
+  if (statusEl) statusEl.textContent = redditStatus.message;
+
+  const feedList = document.getElementById("feed-list");
+  feedList.innerHTML = "";
+
+  const reportQueue = accountsNeedingReport();
+  const bannerHost = document.getElementById("feed-col");
+  let banner = document.getElementById("account-alert-banner");
+  if (reportQueue.length) {
+    if (!banner) {
+      banner = document.createElement("div");
+      banner.id = "account-alert-banner";
+      banner.className = "account-alert-banner";
+      bannerHost.insertBefore(banner, document.getElementById("feed-list"));
+    }
+    banner.innerHTML = reportQueue.map(r => `
+      <div class="account-alert-row">
+        <span>&#9888; <strong>${r.account}</strong> — ${r.count} severe posts</span>
+        <button class="retract" onclick="reportAccount('${r.account}')">Flag for reporting</button>
+      </div>
+    `).join("");
+  } else if (banner) {
+    banner.remove();
+  }
+
+  const acctCounts = accountHighSeverityCounts();
+  items.slice().reverse().forEach(item => {
+    const div = document.createElement("div");
+    const isRepeatOffender = (acctCounts[item.account] || 0) >= ACCOUNT_REPORT_THRESHOLD;
+    div.className = "feed-item sev-" + item.severity + (item.id === selectedId ? " selected" : "") + (item.actioned ? " actioned" : "") + (item.retracted ? " retracted" : "");
+    div.onclick = () => { selectedId = item.id; render(); };
+    div.innerHTML = `
+      <div class="feed-meta">
+        <span>${item.source} &middot; ${item.account}${reportedAccounts.has(item.account) ? " &#128681;" : isRepeatOffender ? " &#9888;" : ""}</span>
+        <span>${fmtTime(item.time)}</span>
+      </div>
+      <div class="feed-text truncate">
+        <span class="platform-tag ${item.platform === "reddit-sim" ? "reddit" : "sim"}">${item.platform === "reddit-sim" ? "reddit-style" : "simulated"}</span>
+        ${item.actioned ? " <span style='color:var(--low)'>" + item.outcomeIcon + "</span>" : ""}
+        ${item.retracted ? " <span style='color:var(--high)'>&#9099; retracted &middot;</span>" : ""}
+        ${item.removed ? " <span style='color:var(--high)'>[flagged for takedown]</span>" : ""}
+        ${item.text}
+      </div>
+      <span class="badge ${item.severity}">${item.actioned ? item.actionTaken : (item.retracted ? "needs re-review" : item.severity)}</span>
+    `;
+    feedList.appendChild(div);
+  });
+
+  const detail = document.getElementById("detail-content");
+  const sel = items.find(i => i.id === selectedId);
+  if (!sel) {
+    detail.innerHTML = '<div class="empty-state">Select an item from the feed to review suggested actions.</div>';
+  } else {
+    const action = suggestedAction(sel);
+    detail.innerHTML = `
+      <div class="detail">
+        <div class="detail-source">
+          <span class="platform-tag ${sel.platform === "reddit-sim" ? "reddit" : "sim"}">${sel.platform === "reddit-sim" ? "reddit-style" : "simulated"}</span>
+          &nbsp;${sel.source} &middot; ${sel.account}${reportedAccounts.has(sel.account) ? ' <span style="color:var(--high)">&#128681; flagged for reporting</span>' : ((acctCounts[sel.account] || 0) >= ACCOUNT_REPORT_THRESHOLD ? ' <span style="color:var(--high)">&#9888; repeat severe offender</span>' : '')}
+          &middot; ${fmtTime(sel.time)} &middot; <span class="badge ${sel.severity}">${sel.severity}</span>
+          ${sel.removed ? ' &middot; <span style="color:var(--high)">[flagged for takedown, not actually removed]</span>' : ''}
+        </div>
+        <div class="detail-text">${sel.text}</div>
+        ${typeof sel.redditScore === "number" ? `<div class="detail-link" style="color:var(--muted)">${sel.redditScore} simulated upvotes &middot; not a real post, no live link</div>` : ""}
+        <div class="detail-section">
+          <div class="detail-label">Why this was flagged</div>
+          <div class="signals">${sel.signals.map(s => `<span class="signal-chip">${s}</span>`).join("")}</div>
+        </div>
+        ${sel.retracted ? `
+        <div class="detail-section">
+          <div class="retracted-note">
+            &#9099; Previous action "${sel.lastRetractedAction}" was retracted${sel.retractedAt ? " at " + sel.retractedAt : ""}.
+            Reason: ${sel.retractedReason}. This item is back in the queue for a fresh decision.
+          </div>
+        </div>` : ""}
+        <div class="detail-section">
+          <div class="detail-label">Suggested action ${sel.actioned ? (sel.autoActioned ? "— auto-resolved (low-risk)" : "— resolved") : "(requires your approval)"}</div>
+          <div class="action-card">
+            <div class="action-title">${action.title}</div>
+            <div class="action-body">${action.body}</div>
+            ${sel.actioned
+              ? `<div style="font-size:12px;color:var(--muted);border-top:1px solid var(--border);margin-top:10px;padding-top:10px">
+                   <div style="color:var(--low);font-weight:600;margin-bottom:4px">${sel.outcomeIcon} ${sel.actionTaken}${sel.autoActioned ? " (auto)" : ""}</div>
+                   ${sel.outcomeDetail}
+                 </div>
+                 ${canRetract(sel) ? `
+                 <div class="retract-row">
+                   <input id="retract-reason-${sel.id}" type="text" placeholder="Why is this being retracted?" />
+                   <button class="retract" onclick="retractItem(${sel.id})">Retract</button>
+                 </div>` : ""}`
+              : `<div class="action-row">
+                   <button class="approve" onclick="resolveItem(${sel.id}, 'approved')">${
+                     action.type === "escalate_remove" ? "Approve: escalate + flag takedown" :
+                     action.type === "escalate" ? "Approve: escalate to legal" :
+                     action.type === "reply" ? "Approve: post reply" :
+                     "Approve: log only"
+                   }</button>
+                   <button class="dismiss" onclick="resolveItem(${sel.id}, 'dismissed')">Dismiss, no action</button>
+                   <button class="reject" onclick="resolveItem(${sel.id}, 'escalated to legal')">Escalate to legal</button>
+                 </div>`
+            }
+          </div>
+        </div>
+        ${sel.history && sel.history.length ? `
+        <div class="detail-section">
+          <div class="detail-label">History</div>
+          ${sel.history.map(h => `<div class="history-entry">${h.at} — ${h.event}</div>`).join("")}
+        </div>` : ""}
+      </div>
+    `;
+  }
+
+  const stats = document.getElementById("stats");
+  const high = items.filter(i => i.severity === "high" && !i.actioned).length;
+  const medium = items.filter(i => i.severity === "medium" && !i.actioned).length;
+  const retracted = items.filter(i => i.retracted).length;
+  const flaggedCount = items.filter(i => i.removed).length;
+  const redditSimCount = items.filter(i => i.platform === "reddit-sim").length;
+  stats.innerHTML = `
+    <div class="stat"><div class="stat-num" style="color:var(--high)">${high}</div><div class="stat-label">high, open</div></div>
+    <div class="stat"><div class="stat-num" style="color:var(--medium)">${medium}</div><div class="stat-label">medium, open</div></div>
+    <div class="stat"><div class="stat-num">${items.length}</div><div class="stat-label">total tracked</div></div>
+    <div class="stat"><div class="stat-num" style="color:var(--low)">${redditSimCount}</div><div class="stat-label">reddit-style posts</div></div>
+    <div class="stat"><div class="stat-num">${actionedCount}</div><div class="stat-label">resolved</div></div>
+    <div class="stat"><div class="stat-num" style="color:var(--high)">${retracted}</div><div class="stat-label">retracted, re-queued</div></div>
+    <div class="stat"><div class="stat-num" style="color:var(--high)">${flaggedCount}</div><div class="stat-label">flagged for takedown</div></div>
+    <div class="stat"><div class="stat-num" style="color:var(--high)">${reportedAccounts.size}</div><div class="stat-label">accounts flagged</div></div>
+  `;
+
+  const queue = document.getElementById("queue-list");
+  const resolved = items.filter(i => i.actioned).slice().reverse().slice(0, 12);
+  queue.innerHTML = resolved.length
+    ? resolved.map(i => `<div class="queue-item"><span class="badge ${i.severity}">${i.severity}</span> &nbsp;${i.autoActioned ? "<span style='color:var(--low)'>[auto]</span> " : ""}${i.actionTaken}<div class="queue-text truncate">${i.text.slice(0, 60)}...</div></div>`).join("")
+    : '<div class="queue-item" style="color:var(--muted)">Nothing resolved yet.</div>';
+}
+
+function ticketId() {
+  return "AP-" + Math.floor(10000 + Math.random() * 89999);
+}
+
+function outcomeFor(item, action) {
+  const now = fmtTime(new Date());
+  if (action === "approved") {
+    const suggestion = suggestedAction(item);
+    if (suggestion.type === "escalate_remove") {
+      return {
+        label: "Escalated + flagged for takedown",
+        icon: "\u2691",
+        detail: `Case ${ticketId()} opened with trust & safety / legal at ${now}. Internally flagged for a platform takedown request — no request has actually been submitted to ${item.platform === "reddit-sim" ? "Reddit" : "the platform"} by this console; that step is up to your team.`,
+        removePost: true,
+      };
+    }
+    if (suggestion.type === "escalate") {
+      return {
+        label: "Escalated to legal",
+        icon: "\u2691",
+        detail: `Case ${ticketId()} opened with trust & safety / legal at ${now}. Content flagged for review — no takedown request filed.`,
+      };
+    }
+    if (suggestion.type === "reply") {
+      return {
+        label: "Reply posted",
+        icon: "\u2713",
+        detail: `Support reply sent at ${now}. Ticket ${ticketId()} opened to track resolution with the poster.`,
+      };
+    }
+    return {
+      label: "Logged, no public action",
+      icon: "\u2713",
+      detail: `Approved as monitor-only at ${now}. Logged for trend tracking — no reply needed unless volume increases.`,
+    };
+  }
+  if (action === "dismissed") {
+    return {
+      label: "Verified, no action needed",
+      icon: "\u2713",
+      detail: `Reviewed and marked ok at ${now}. Logged for trend tracking only.`,
+    };
+  }
+  if (action === "escalated to legal") {
+    return {
+      label: "Escalated to legal",
+      icon: "\u2691",
+      detail: `Case ${ticketId()} opened directly with legal at ${now}, bypassing standard review due to severity.`,
+    };
+  }
+  return { label: action, icon: "\u2713", detail: `Marked ${action} at ${now}.` };
+}
+
+function resolveItem(id, action) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  const outcome = outcomeFor(item, action);
+  item.actioned = true;
+  item.retracted = false;
+  item.actionTaken = outcome.label;
+  item.outcomeDetail = outcome.detail;
+  item.outcomeIcon = outcome.icon;
+  item.autoActioned = false;
+  item.actionType = action; // 'approved' | 'dismissed' | 'escalated to legal'
+  item.removed = !!outcome.removePost;
+  item.history = item.history || [];
+  item.history.push({ at: fmtTime(new Date()), event: `Actioned: ${outcome.label}` });
+  actionedCount += 1;
+  render();
+}
+window.resolveItem = resolveItem;
+
+// Retracting only makes sense for something that actually went to a
+// decision: a reply, or an escalation that was opened. A dismissal
+// ("verified, no action needed") never left the console, so there's
+// nothing to pull back — retraction is intentionally not offered for it.
+const RETRACTABLE_ACTION_TYPES = ["approved", "escalated to legal"];
+
+function canRetract(item) {
+  return item.actioned && !item.retracted && RETRACTABLE_ACTION_TYPES.includes(item.actionType);
+}
+
+function retractItem(id) {
+  const item = items.find(i => i.id === id);
+  if (!item || !canRetract(item)) return;
+  const reasonInput = document.getElementById(`retract-reason-${id}`);
+  const reason = (reasonInput && reasonInput.value.trim()) || "No reason given";
+  const now = fmtTime(new Date());
+
+  item.history = item.history || [];
+  item.history.push({
+    at: now,
+    event: item.removed
+      ? `Retracted "${item.actionTaken}" — takedown flag cleared — reason: ${reason}`
+      : `Retracted "${item.actionTaken}" — reason: ${reason}`,
+  });
+
+  item.lastRetractedAction = item.actionTaken;
+  item.actioned = false;
+  item.retracted = true;
+  item.removed = false;
+  item.retractedReason = reason;
+  item.retractedAt = now;
+  actionedCount = Math.max(0, actionedCount - 1);
+  render();
+}
+window.retractItem = retractItem;
+
+// Auto-execution is intentionally limited to non-destructive, non-public,
+// fully reversible actions: internal tagging and trend logging. Anything
+// that touches a public reply, takedown flag, or legal escalation always
+// stays in the manual queue, regardless of confidence score.
+const AUTO_EXECUTABLE_SEVERITIES = ["low"];
+
+function autoExecuteIfEligible(item) {
+  if (!AUTO_EXECUTABLE_SEVERITIES.includes(item.severity)) return false;
+  item.actioned = true;
+  item.actionTaken = "auto-tagged & logged";
+  item.outcomeDetail = `Auto-tagged and logged for trend tracking at ${fmtTime(new Date())}. No public or legal effect.`;
+  item.outcomeIcon = "\u2713";
+  item.autoActioned = true;
+  actionedCount += 1;
+  return true;
+}
+
+function tick() {
+  const newItem = genSimulatedItem();
+  autoExecuteIfEligible(newItem);
+  items.push(newItem);
+  if (items.length > 80) items.shift();
+  render();
+}
+
+for (let i = 0; i < 4; i++) tick();
+setInterval(tick, 7000);
+
+refreshRedditFeed();
+redditTimer = setInterval(refreshRedditFeed, 25000);
+
+render();
+</script>
+
+</body>
+</html>
